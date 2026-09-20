@@ -1,0 +1,7 @@
+.cache/
+bin/
+.env
+*.bak
+*.backup-*
+jev-client.json
+dist/

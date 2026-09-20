@@ -1,0 +1,10 @@
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!vendor/
+!vendor/**
+**/*_test.go
