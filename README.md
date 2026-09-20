@@ -1,13 +1,15 @@
 # Jev MCP Hub
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Jev MCP Hub is a small Go gateway that exposes TypeSafe's Jev model through the Model Context Protocol. It forwards each caller's TypeSafe API key to `https://api.typesafe.ai/v1/systemone` and does not store, log, or share keys between sessions.
 
 It exposes four MCP tools:
 
-- `jev_noul` -yes/no probability
-- `jev_choice` -one option with probabilities and confidence
-- `jev_score` -probability-weighted score across ordered levels
-- `jev_evaluate` -several named questions in one request
+- `jev_noul` - yes/no probability
+- `jev_choice` - one option with probabilities and confidence
+- `jev_score` - probability-weighted score across ordered levels
+- `jev_evaluate` - several named questions in one request
 
 The request and answer shapes follow TypeSafe's System One API: `state`, `model` (defaults to `jev-latest`), and typed `questions`. See the [TypeSafe API reference](https://docs.typesafe.ai/api) for the full question shape.
 
@@ -30,7 +32,7 @@ go run ./cmd/jev-mcphub init --config jev-client.json
 go run ./cmd/jev-mcphub install --client all --config jev-client.json
 ```
 
-PowerShell users can run `scripts/install.ps1 -Client all -Config .\jev-client.json`; Unix users can run `scripts/install.sh all ./jev-client.json`. Installation is atomic, creates a timestamped `*.backup-*` file when a config already exists, preserves unrelated MCP entries, and writes config files with owner-only permissions.
+PowerShell users can run `scripts/install.ps1 -Client all -Config .\jev-client.json`; Unix users can run `sh scripts/install.sh all ./jev-client.json`. Each config write is atomic, creates a timestamped `*.backup-*` file when a config already exists, preserves unrelated configuration values, and requests owner-only permissions where the operating system supports them.
 
 The installer writes:
 
@@ -41,7 +43,7 @@ url = "https://your-host.example/mcp"
 http_headers = { Authorization = "Bearer YOUR_TYPESAFE_TOKEN" }
 ```
 
-The Claude Code file (~/.claude.json) contains:
+The Claude Code file (`~/.claude.json`) contains:
 
 ```json
 {"mcpServers":{"jev":{"type":"http","url":"https://your-host.example/mcp","headers":{"Authorization":"Bearer YOUR_TYPESAFE_TOKEN"}}}}
