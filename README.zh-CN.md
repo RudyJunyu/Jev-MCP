@@ -22,6 +22,8 @@ curl http://127.0.0.1:8080/healthz
 
 Compose 默认只绑定本机回环地址。只有在服务前配置了 HTTPS 反向代理时，才应修改 `JEV_BIND_IP` 和 `JEV_PORT`。本地使用的 MCP 地址为 `http://127.0.0.1:8080/mcp`。
 
+Docker 构建通过 DaoCloud 拉取 Go 和 distroless 基础镜像，并使用多架构 manifest digest 固定版本，保证构建来源可复现。
+
 ## 只需 Token 的客户端配置
 
 先生成本地配置文件，然后将其中的占位符替换为用户自己的 TypeSafe API Key：
@@ -50,6 +52,8 @@ Claude Code 的 `~/.claude.json` 配置如下：
 ```
 
 公网部署必须使用 HTTPS。服务会拒绝来自浏览器 Origin 的请求，将请求体限制为 1 MiB，使用无状态 Streamable HTTP，并且只接受 `Authorization: Bearer ...` 请求头。遇到 TypeSafe 返回 `429` 或 `529` 时，服务会执行次数和时长受限的退避重试。
+
+HTTP 请求和 MCP 工具调用会以 JSON 结构化日志写入 stderr 或 Docker 日志。Prometheus 兼容的 HTTP、工具调用次数和耗时指标位于 `GET /metrics`；日志及指标标签不会包含 token 或请求内容。
 
 ## 本地开发
 

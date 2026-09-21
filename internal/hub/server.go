@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -49,11 +50,33 @@ func decode(raw json.RawMessage, out any) error {
 }
 
 func New(client *typesafe.Client, stdioToken string, timeout time.Duration) *mcp.Server {
+	return NewWithObservability(client, stdioToken, timeout, nil, nil)
+}
+
+func NewWithObservability(client *typesafe.Client, stdioToken string, timeout time.Duration, logger *slog.Logger, metrics *Metrics) *mcp.Server {
+	if logger == nil {
+		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
+	}
+	if metrics == nil {
+		metrics = NewMetrics()
+	}
 	s := mcp.NewServer(&mcp.Implementation{Name: "jev", Version: Version}, &mcp.ServerOptions{
 		Instructions: "Use Jev for structured classification (choice), ordered scoring (score), yes/no probability (noul), or batch evaluation. Always supply the relevant state. Results include upstream answers and usage. Calls consume the user's TypeSafe quota.",
 	})
 	for _, kind := range []string{"evaluate", "choice", "score", "noul"} {
 		s.AddTool(&mcp.Tool{Name: "jev_" + kind, Description: toolDescription(kind), InputSchema: inputSchema(kind)}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			started := time.Now()
+			failed := true
+			defer func() {
+				elapsed := time.Since(started)
+				metrics.observeTool(kind, failed, elapsed)
+				attrs := []any{"tool", kind, "success", !failed, "duration_ms", elapsed.Seconds() * 1000}
+				if failed {
+					logger.Warn("mcp_tool_call", attrs...)
+				} else {
+					logger.Info("mcp_tool_call", attrs...)
+				}
+			}()
 			token := stdioToken
 			if req.Extra != nil && req.Extra.Header != nil {
 				token, _ = Token(req.Extra.Header.Get("Authorization"))
@@ -80,6 +103,7 @@ func New(client *typesafe.Client, stdioToken string, timeout time.Duration) *mcp
 				return toolError(err), nil
 			}
 			data, _ := json.Marshal(result)
+			failed = false
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}, StructuredContent: result}, nil
 		})
 	}
@@ -154,12 +178,20 @@ func inputSchema(kind string) map[string]any {
 // Handler is stateless: credentials are read from each request, never shared
 // between sessions. API key validity is checked by TypeSafe on tool calls.
 func Handler(s *mcp.Server) http.Handler {
+	return HandlerWithObservability(s, slog.New(slog.NewJSONHandler(io.Discard, nil)), NewMetrics())
+}
+
+func HandlerWithObservability(s *mcp.Server, logger *slog.Logger, metrics *Metrics) http.Handler {
+	if metrics == nil {
+		metrics = NewMetrics()
+	}
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"status":"ok","service":"jev-mcphub"}`)
 	})
+	mux.Handle("GET /metrics", metrics)
 	mux.Handle("/mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Native MCP clients do not send Origin. Browser calls are deliberately
 		// disabled; this also protects a locally published Docker port.
@@ -175,9 +207,10 @@ func Handler(s *mcp.Server) http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		mcpHandler.ServeHTTP(w, r)
 	}))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	base := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
 		mux.ServeHTTP(w, r)
 	})
+	return withObservability(base, logger, metrics)
 }

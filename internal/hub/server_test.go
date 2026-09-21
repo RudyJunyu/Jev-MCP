@@ -3,8 +3,10 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,7 +48,8 @@ func TestStreamableHTTPToolCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mcpHTTP := httptest.NewServer(Handler(New(client, "", 2*time.Second)))
+	metrics := NewMetrics()
+	mcpHTTP := httptest.NewServer(HandlerWithObservability(NewWithObservability(client, "", 2*time.Second, nil, metrics), nil, metrics))
 	defer mcpHTTP.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -87,6 +90,18 @@ func TestStreamableHTTPToolCall(t *testing.T) {
 	if !ok || structured["answers"] == nil {
 		t.Fatalf("unexpected structured result: %#v", result.StructuredContent)
 	}
+	res, err := http.Get(mcpHTTP.URL + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `jev_mcp_tool_calls_total{tool="noul",outcome="success"} 1`) {
+		t.Fatalf("missing successful noul metric: %s", body)
+	}
 }
 
 func TestHTTPRequiresBearerAndRejectsBrowserOrigin(t *testing.T) {
@@ -114,5 +129,27 @@ func TestHTTPRequiresBearerAndRejectsBrowserOrigin(t *testing.T) {
 				t.Fatalf("status=%d, want %d", res.StatusCode, tc.want)
 			}
 		})
+	}
+}
+
+func TestMetricsEndpoint(t *testing.T) {
+	server := httptest.NewServer(HandlerWithObservability(mcp.NewServer(&mcp.Implementation{Name: "test", Version: "1"}, nil), nil, NewMetrics()))
+	defer server.Close()
+	res, err := http.Get(server.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	res, err = http.Get(server.URL + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "jev_http_requests_total 1") {
+		t.Fatalf("status=%d body=%s", res.StatusCode, body)
 	}
 }

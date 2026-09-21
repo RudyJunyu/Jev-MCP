@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -120,16 +121,18 @@ func serve(args []string) error {
 			return errors.New("stdio requires TYPESAFE_API_KEY")
 		}
 	}
-	s := hub.New(client, token, *timeout)
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	metrics := hub.NewMetrics()
+	s := hub.NewWithObservability(client, token, *timeout, logger, metrics)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if *transport == "stdio" {
 		return s.Run(ctx, &mcp.StdioTransport{})
 	}
-	srv := &http.Server{Addr: *addr, Handler: hub.Handler(s), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: *timeout + 10*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	srv := &http.Server{Addr: *addr, Handler: hub.HandlerWithObservability(s, logger, metrics), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: *timeout + 10*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	done := make(chan error, 1)
 	go func() { done <- srv.ListenAndServe() }()
-	fmt.Fprintln(os.Stderr, "Jev MCP listening on", *addr, "(/mcp); tokens are provided by each client")
+	logger.Info("server_started", "addr", *addr, "transport", *transport)
 	select {
 	case err := <-done:
 		if errors.Is(err, http.ErrServerClosed) {

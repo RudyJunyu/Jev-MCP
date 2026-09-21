@@ -1,6 +1,6 @@
 # Jev MCP Hub
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](README.md) | [&#31616;&#20307;&#20013;&#25991;](README.zh-CN.md)
 
 Jev MCP Hub is a small Go gateway that exposes TypeSafe's Jev model through the Model Context Protocol. It forwards each caller's TypeSafe API key to `https://api.typesafe.ai/v1/systemone` and does not store, log, or share keys between sessions.
 
@@ -21,6 +21,8 @@ curl http://127.0.0.1:8080/healthz
 ```
 
 The compose file binds to loopback by default. Set `JEV_BIND_IP` and `JEV_PORT` only when an HTTPS reverse proxy is in front of the service. The MCP endpoint is `http://127.0.0.1:8080/mcp` for local use.
+
+Docker builds pull the Go and distroless base images through DaoCloud and pin both multi-platform manifests by digest for reproducible builds.
 
 ## One-token client setup
 
@@ -50,6 +52,8 @@ The Claude Code file (`~/.claude.json`) contains:
 ```
 
 For a public deployment, use an HTTPS URL. The server rejects browser-origin requests, limits request bodies to 1 MiB, uses stateless Streamable HTTP, and accepts only an `Authorization: Bearer ...` header. It retries TypeSafe `429` and `529` responses with bounded backoff.
+
+HTTP requests and MCP tool calls are emitted as JSON logs to stderr/Docker logs. Prometheus-compatible HTTP and tool counters and duration metrics are available at `GET /metrics`; logs and metric labels contain no tokens or request content.
 
 ## Local development
 
